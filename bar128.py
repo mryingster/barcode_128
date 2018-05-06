@@ -117,26 +117,6 @@ CODEA = 0
 CODEB = 1
 CODEC = 2
 
-def calculateChecksum(message):
-    sum = message[0][1]
-    for i in range(1, len(message)):
-        sum += i * message[i][1]
-
-    return sum % 103
-
-def lookup(char, mode):
-    # Look for character in current mode
-    for i in range(len(barcodeTable)):
-        if barcodeTable[i][mode] == char:
-            return i, mode
-
-    # No matching character found in current mode. Check other modes:
-    for i in range(len(barcodeTable)):
-        if char in barcodeTable[i]:
-            return i, barcodeTable[i].index(char)
-
-    return -1, -1
-
 def hex2rgb(h):
     return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
 
@@ -215,30 +195,84 @@ def savePpm(barcode, filename, settings):
     f.close()
     return
 
+def calculateChecksum(message):
+    sum = message[0][1]
+    for i in range(1, len(message)):
+        sum += i * message[i][1]
+
+    return sum % 103
+
+def lookup(char, mode):
+    for i in range(len(barcodeTable)):
+        if barcodeTable[i][mode] == char:
+            return i
+
+    return -1
+
+def checkCol(a, i):
+    return [r[i] for r in a]
+
+def nextCharMode(string, position, mode):
+    possibleModes = []
+    for possibleMode in [CODEA, CODEB, CODEC]:
+        for i in range(position+1, position+3):
+            if string[position:i] in checkCol(barcodeTable, possibleMode):
+                possibleModes.append(possibleMode)
+
+    # If the next four characters are digits, prefer Mode C for concision
+    if len(string)-position >= 4 and string[position:position+5].isdigit():
+        return CODEC
+
+    # Prefer mode we are currently in
+    if mode in possibleModes:
+        return mode
+
+    # Otherwise select right-most mode
+    return possibleModes[-1]
+
 def barcodify(inputString, settings):
     filename    = inputString
-    inputArray = list(inputString)
-    mode        = CODEB # Start with this since is most common
+    mode        = CODEC # Start with this since is most common
     message     = []
+    nextCharMode(inputString, 0, mode)
+
+    # Determine mode to start with
+    if inputString[:4].isdigit():
+        mode = CODEC
+    elif inputString.isupper():
+        mode = CODEA
+    else:
+        mode = CODEB
 
     # Start
     startDict = ["Start Code A", "Start Code B", "Start Code C"]
-    value, mode = lookup(startDict[mode], mode)
+    value = lookup(startDict[mode], mode)
     message.append([startDict[mode], value])
 
     # Process inputArray and look for code changes
     modeDict = ["Code A", "Code B", "Code C"]
-    for i in range(len(inputArray)):
-        value, nextmode = lookup(inputArray[i], mode)
-        if nextmode != mode:
-            tvalue, mode = lookup(modeDict[nextmode], mode)
-            message.append([modeDict[nextmode], tvalue])
-            mode = nextmode
-        message.append([inputArray[i], value])
+    i = 0
+    while i < len(inputString):
+        nextMode = nextCharMode(inputString, i, mode)
+
+        # If we have to switch modes, put in appropriate command
+        if nextMode != mode:
+            tvalue = lookup(modeDict[nextMode], mode)
+            message.append([modeDict[nextMode], tvalue])
+            mode = nextMode
+
+        # Look up character value for current mode
+        character = inputString[i]
+        if mode == CODEC and i + 1 < len(inputString):
+            character += inputString[i+1]
+            i += 1
+        value = lookup(character, mode)
+        message.append([character, value])
+        i += 1
 
     # Add close statement
     message.append(["CRC", calculateChecksum(message)])
-    value, mode = lookup("Stop pattern", mode)
+    value = lookup("Stop pattern", mode)
     message.append(["Stop pattern", value])
 
     # Generate Barcode String
