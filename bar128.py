@@ -127,7 +127,6 @@ def savePng(barcode, inputString, filename, settings):
 
     length_barcode = len(barcode)
     width_bar      = settings["scale"]
-    font_size      = width_bar * 15
     width_barcode  = width_bar * length_barcode
     height_barcode = width_barcode / 3
     border         = width_bar * 10
@@ -162,21 +161,36 @@ def savePng(barcode, inputString, filename, settings):
         ctx.select_font_face("Courier",
                              cairo.FONT_SLANT_NORMAL,
                              cairo.FONT_WEIGHT_BOLD)
+
+        # Figure out sizing for textbox
+        width_startbars    = width_bar * len(barcodeTable[103][3])
+        width_endbars      = width_bar * len(barcodeTable[108][3])
+        width_textarea     = width_barcode - width_startbars - width_endbars
+        desired_text_width = width_textarea - (border * 2)
+
+        # Set font size somewhat arbitrarily, then measure it, and rescale it accordingly
+        font_size       = width_bar * 15
         ctx.set_font_size(font_size)
-        x_bearing, y_bearing, width_text, height_text = ctx.text_extents(inputString)[:4]
+        x, y, width_text, height_text = ctx.text_extents(inputString)[:4]
+        font_size          = desired_text_width / width_text * font_size
+        ctx.set_font_size(font_size)
+        x, y, width_text, height_text = ctx.text_extents(inputString)[:4]
+
+        # Finally set textbox height
+        height_textarea    = height_text + (border/2)
 
         # Draw box behind text
         ctx.set_source_rgb(*background)
-        width_startbars = width_bar * len(barcodeTable[103][3])
-        width_endbars   = width_bar * len(barcodeTable[108][3])
         ctx.rectangle(border + width_startbars,
-                      height_barcode - height_text + (border / 2),
-                      width_barcode - width_startbars - width_endbars,
-                      height_text + (border))
+                      height_total - border - height_textarea,
+                      width_textarea,
+                      height_textarea)
         ctx.fill()
 
-        # Display text
-        ctx.move_to((width_total - width_text) / 2, height_total-border)
+        # Draw text
+        text_x = (border + width_startbars + (width_textarea / 2)) - (width_text / 2)
+        text_y = height_total - border
+        ctx.move_to(text_x, text_y)
         ctx.set_source_rgb(*foreground)
         ctx.show_text(inputString)
 
