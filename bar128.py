@@ -122,20 +122,24 @@ def hex2rgb(h):
 
 def savePng(barcode, inputString, filename, settings):
     # Save PNG using Cairo
-    from PIL import Image
     import cairo
 
-    length_barcode = len(barcode)
-    width_bar      = settings["scale"]
-    width_barcode  = width_bar * length_barcode
-    height_barcode = width_barcode / 3
-    border         = width_bar * 10
-    width_total    = width_barcode + (border * 2)
-    height_total   = height_barcode + (border * 2)
-    foreground     = settings["fgcolor"]
-    background     = settings["bgcolor"]
+    scale           = settings["scale"]
+    length_barcode  = len(barcode)
+    width_barcode   = scale * length_barcode
+    height_barcode  = scale * 40
+    width_startbars = scale * len(barcodeTable[103][3])
+    width_endbars   = scale * len(barcodeTable[108][3])
+    width_textbox   = width_barcode - width_startbars - width_endbars
+    height_textbox  = scale * 15
+    height_text     = scale * 10
+    border          = scale * 10
+    width_total     = width_barcode + (border * 2)
+    height_total    = height_barcode + (border * 2)
+    foreground      = settings["fgcolor"]
+    background      = settings["bgcolor"]
 
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width_total, height_total)
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, int(width_total), int(height_total))
     ctx     = cairo.Context(surface)
 
     # Draw border
@@ -144,15 +148,15 @@ def savePng(barcode, inputString, filename, settings):
     ctx.fill()
 
     # Draw Barcode
-    for i in range(len(barcode)):
-        if barcode[i] == "1":
+    for bar in range(len(barcode)):
+        if barcode[bar] == "1":
             ctx.set_source_rgb(*foreground)
         else:
             ctx.set_source_rgb(*background)
 
-        ctx.rectangle(i*width_bar + border,
+        ctx.rectangle(bar * scale + border,
                       border,
-                      width_bar,
+                      1 * scale,
                       height_barcode)
         ctx.fill()
 
@@ -162,33 +166,30 @@ def savePng(barcode, inputString, filename, settings):
                              cairo.FONT_SLANT_NORMAL,
                              cairo.FONT_WEIGHT_BOLD)
 
-        # Figure out sizing for textbox
-        width_startbars    = width_bar * len(barcodeTable[103][3])
-        width_endbars      = width_bar * len(barcodeTable[108][3])
-        width_textarea     = width_barcode - width_startbars - width_endbars
-        desired_text_width = width_textarea - (border * 2)
-
         # Set font size somewhat arbitrarily, then measure it, and rescale it accordingly
-        font_size       = width_bar * 15
+        font_size = scale * 15
         ctx.set_font_size(font_size)
-        x, y, width_text, height_text = ctx.text_extents(inputString)[:4]
-        font_size          = desired_text_width / width_text * font_size
-        ctx.set_font_size(font_size)
-        x, y, width_text, height_text = ctx.text_extents(inputString)[:4]
+        x, y, actual_width_text, actual_height_text = ctx.text_extents(inputString)[:4]
 
-        # Finally set textbox height
-        height_textarea    = height_text + (border/2)
+        font_size *= (height_text / actual_height_text)
+        ctx.set_font_size(font_size)
+        x, y, actual_width_text, actual_height_text = ctx.text_extents(inputString)[:4]
+
+        if actual_width_text > width_textbox:
+            font_size *= ((width_textbox - border) / actual_width_text)
+            ctx.set_font_size(font_size)
+            x, y, actual_width_text, actual_height_text = ctx.text_extents(inputString)[:4]
 
         # Draw box behind text
         ctx.set_source_rgb(*background)
         ctx.rectangle(border + width_startbars,
-                      height_total - border - height_textarea,
-                      width_textarea,
-                      height_textarea)
+                      height_total - border - height_textbox,
+                      width_textbox,
+                      height_textbox + border)
         ctx.fill()
 
         # Draw text
-        text_x = (border + width_startbars + (width_textarea / 2)) - (width_text / 2)
+        text_x = (border + width_startbars + (width_textbox / 2)) - (actual_width_text / 2)
         text_y = height_total - border
         ctx.move_to(text_x, text_y)
         ctx.set_source_rgb(*foreground)
@@ -258,6 +259,14 @@ def barcodify(inputString, settings):
     else:
         mode = CODEB
 
+    # Add line endings based on settings
+    if settings["tab"] == True:
+        inputString += "\t"
+    if settings["cr"] == True:
+        inputString += "\r"
+    if settings["lf"] == True:
+        inputString += "\n"
+
     # Start
     startDict = ["Start Code A", "Start Code B", "Start Code C"]
     value = lookup(startDict[mode], mode)
@@ -295,7 +304,7 @@ def barcodify(inputString, settings):
         characterBarcode = barcodeTable[i[1]][3]
         barcode += characterBarcode
         if settings["verbose"] == True:
-            print characterBarcode, i
+            print(characterBarcode, i)
 
     # Create output filename
     filename    = re.sub("[\s]",        "_", filename)
@@ -313,10 +322,13 @@ if len(sys.argv) < 2:
 # Process arguments
 settings = {
     "verbose" : False,
-    "scale"   : 3,
+    "scale"   : 10,
     "bgcolor" : (1.0, 1.0, 1.0),
     "fgcolor" : (0.0, 0.0, 0.0),
     "string"  : True,
+    "cr"      : False,
+    "lf"      : False,
+    "tab"     : False
 }
 
 strings = []
@@ -336,6 +348,12 @@ while i < len(sys.argv):
         settings.update({"scale" : int(sys.argv[i])})
     elif argument in ["--nolabel"]:
         settings.update({"string" : False})
+    elif argument in ["-lf"]:
+        settings.update({"lf" : True})
+    elif argument in ["-cr"]:
+        settings.update({"cr" : True})
+    elif argument in ["-tab"]:
+        settings.update({"tab" : True})
     else:
         strings.append(argument)
     i += 1
