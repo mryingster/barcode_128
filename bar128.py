@@ -117,12 +117,19 @@ CODEA = 0
 CODEB = 1
 CODEC = 2
 
+def error(message):
+    print("ERROR: %s" % message)
+    quit(1)
+
 def hex2rgb(h):
     return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
 
 def savePng(barcode, inputString, filename, settings):
     # Save PNG using Cairo
-    import cairo
+    try:
+        import cairo
+    except:
+        error("Unable to find Cairo library. Install library, or use '-ppm' option to save PPM file instead.")
 
     scale           = settings["scale"]
     length_barcode  = len(barcode)
@@ -306,14 +313,7 @@ def barcodify(inputString, settings):
         if settings["verbose"] == True:
             print(characterBarcode, i)
 
-    # Create output filename
-    filename    = re.sub("[\s]",        "_", filename)
-    filename    = re.sub("[\\\/:;=()]", "",  filename)
-
-    # Save to file
-    savePng(barcode, inputString, filename, settings)
-    return
-
+    return barcode
 
 if len(sys.argv) < 2:
     print("Please provide value or string to convert to barcode.")
@@ -328,7 +328,8 @@ settings = {
     "string"  : True,
     "cr"      : False,
     "lf"      : False,
-    "tab"     : False
+    "tab"     : False,
+    "format"  : "png"
 }
 
 strings = []
@@ -354,10 +355,24 @@ while i < len(sys.argv):
         settings.update({"cr" : True})
     elif argument in ["-tab"]:
         settings.update({"tab" : True})
+    elif argument in ["-ppm"]:
+        settings.update({"format" : "ppm"})
     else:
         strings.append(argument)
     i += 1
 
-for i in strings:
-    barcodify(i, settings)
+for string in strings:
+    # Generate barcode
+    barcode = barcodify(string, settings)
+
+    # Create output filename
+    filename    = re.sub("[\s]",        "_", string)
+    filename    = re.sub("[\\\/:;=()]", "",  filename)
+
+    # Save file
+    if settings["format"] == "ppm":
+        savePpm(barcode, filename, settings)
+
+    if settings["format"] == "png":
+        savePng(barcode, string, filename, settings)
 
